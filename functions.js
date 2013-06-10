@@ -13,8 +13,8 @@ function setUser(uid, gid) {
 }
 
 // Custom error codes are sent here
-function sendError(code, message) {
-    
+function sendError(code, message, safe) {
+
     // Create our own error object
     var error = {
         validateMe  : true,

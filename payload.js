@@ -28,16 +28,41 @@ function process(app) {
         if (admin.username !== undefined && admin.password !== undefined) {
             
             // Let's create the admin
-            database.insertAdmin(token, admin.username, admin.password, function(success) {
-                if (success) {
+            database.insertAdmin(token, admin.username, admin.password, function(result) {
+                if (result.success) {
                     response.json(genObj);  
                 } else {
-                    functions.sendError('ADMERR', 'Cannot create administrator');
+                    softError(result.status, result.message, response);
                 }
             });
         } else {
 
             // Not valid :(
+            functions.sendError('INVPOST', 'Invalid POST data');
+        }
+    });
+
+    // Handler for admin authentication
+    app.post('/admins/token', function(request, response, next) {
+        checkSecure(request);
+
+        var admin = request.body;
+
+        // Validation comes first
+        if (admin.username !== undefined && admin.password !== undefined) {
+            
+            // Check for login
+            database.adminAuth(admin.username, admin.password, function(result) {
+                if (result.success) {
+                    delete result.success;
+                    response.json(result);
+                } else {
+                    softError(result.status, result.message, response);
+                }
+            });
+        } else {
+            
+            // POST data not valid
             functions.sendError('INVPOST', 'Invalid POST data');
         }
     });
@@ -52,6 +77,16 @@ function process(app) {
 
     // Error level #2 (server errors)
     app.use(functions.processError);
+}
+
+// Mongo is quite sensitive in throws
+function softError(code, message, response) {
+    var error = {
+        status  : code,
+        message : message
+    };
+
+    response.json(error);
 }
 
 // For those that needs HTTPS

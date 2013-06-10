@@ -15,7 +15,7 @@ var functions = require('./functions');
 // Global variables
 var app = express();
 
-// We need this for the body
+// We need this for the POST body
 app.use(express.bodyParser());
 
 // We need SSL certs!
