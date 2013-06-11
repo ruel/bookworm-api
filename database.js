@@ -28,7 +28,23 @@ var expms = minToMs(30);
 function getBook(id, fields, callback) {
     resetResult();
 
-    // 
+    // Look for our book
+    db.books.find({ _id : id }, function(error, data) {
+        if (error) throw error;
+
+        // Check if there's a record
+        if (data.length > 0) {
+
+            
+            
+            // It's in our first index
+
+        } else {
+            
+            // ID doesn't exist
+            callback(formatResult('INVID', 'Book not found'));
+        }
+    }).limit(1);
 }
 
 // Creation of books
@@ -40,34 +56,83 @@ function insertBook(token, data, callback) {
     // by doing this now
     validateAdminToken(token, function(valid) {
 
-        // We need to re-initialize the object with the optional fields
-        var book = data;
-        book['reviews'] = [];
-        book['year'] = typeof data.year === 'undefined' ? '' : util.inspect(data.year);
-        book['tags'] = typeof data.year === 'undefined' ? [] : data.tags;
-        book['cover_image_url'] = typeof data.year === 'undefined' ? '' : data.cover_image_url;
+        if (valid) {
 
-        // Set the defaults
-        book['download_count'] = 0;
-        book['view_count'] = 0;
-        book['date_created'] = Date.now();
-        book['date_modified'] = Date.now();
+            // We need to re-initialize the object with the optional fields
+            var book = data;
+            book['reviews'] = [];
+            book['year'] = typeof data.year === 'undefined' ? '' : util.inspect(data.year);
+            book['tags'] = typeof data.year === 'undefined' ? [] : data.tags;
+            book['cover_image_url'] = typeof data.year === 'undefined' ? '' : data.cover_image_url;
 
-        // Let's save
-        db.books.save(book, function(error, data) {
-            if (error) throw error;
+            // Author should not be empty
+            book['authors'] = data.authors.length === 0 ? ['Anonymous'] : data.authors;
+
+            // We also want to check for empty author names
+            for (var i in data.authors) {
+                
+                // Check for empty string or whitespaces
+                if (book.authors[i] === '' || book.authors[i].match(/^\s+$/)) {
+                    book.authors[i] = 'Anonymous';
+                }
+            }
+
+            // Remove duplicates
+            book.authors = book.authors.filter(function(e, p) {
+               return book.authors.indexOf(e) == p;
+            });
+
+            // If there are more than 1 authors,
+            // We don't need anonymous
+            if (book.authors.length > 1) {
+                book.authors.splice(book.authors.indexOf('Anonymous'), 1);
+            }
+
+            // Set the defaults
+            book['download_count'] = 0;
+            book['view_count'] = 0;
+            book['date_created'] = Date.now();
+            book['date_modified'] = Date.now();
+
+            // Make sure to create the authors first
+            // Or not. It's synchronized
+            insertAuthors(book.authors);
+
+            // Let's save
+            db.books.save(book, function(error, data) {
+                if (error) throw error;
+                
+                // Update the token expiration
+                updateTokenExp(token);
+
+                // We should include the book id on the result
+                result['data'] = {
+                    book_id : data._id
+                };
+
+                callback(result);
+            });
+        } else {
             
-            // Update the token expiration
-            updateTokenExp(token);
-
-            // We should include the book id on the result
-            result['data'] = {
-                book_id : data._id
-            };
-
-            callback(result);
-        });
+            // Token not valid
+            callback(formatResult('INVTOKEN', 'Token not valid'));
+        }
     });
+}
+
+// We should have authors first though
+// TODO: Sync okay?
+function insertAuthors(authors) {
+    resetResult();
+
+    for (var i in authors) {
+        name = authors[i];
+
+        // Our _id will be the name
+        db.authors.save({ _id : name }, function (error) {
+            if (error) throw error;
+        });
+    }
 }
 
 // Checks for admin authentication, and returns a token

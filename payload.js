@@ -80,7 +80,7 @@ function process(app) {
             // TODO: Find a shorter way of validating
             if (book.title !== undefined &&
                 book.description !== undefined &&
-                book.author_id !== undefined &&
+                book.authors !== undefined &&
                 book.download_url !== undefined) {
                 
                 // It's valid
