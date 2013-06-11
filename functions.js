@@ -34,6 +34,8 @@ function processError(error, request, response, next) {
         // It isn't, so let's create our own
         // We want to log this error though
         console.error((new Date()).toString() + " [E] " + error);
+        console.error(error.stack);
+
         sendError('SERVERR', 'Internal Server Error');
     } else {
         

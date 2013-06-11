@@ -67,6 +67,43 @@ function process(app) {
         }
     });
 
+    app.post('/books', function(request, response, next) {
+        checkSecure(request);
+
+        var book = request.body;
+
+        // We're strict on the token here
+        if (request.query.access_token !== undefined) {
+            var token = request.query.access_token;
+
+            // We need to validate the fields, this will be long /sigh
+            // TODO: Find a shorter way of validating
+            if (book.title !== undefined &&
+                book.description !== undefined &&
+                book.author_id !== undefined &&
+                book.download_url !== undefined) {
+                
+                // It's valid
+                database.insertBook(token, book, function(result) {
+                    if (result.success) {
+                        delete result.success;
+                        response.json(result);
+                    } else {
+                        softError(result.status, result.message, response);
+                    }
+                });
+            } else {
+                
+                // NOTE TO SELF: uncatched 'else' could lead to a hang
+                functions.sendError('INVPOST', 'Invalid POST data');
+            }
+        } else {
+        
+            // No token
+            functions.sendError('NOTKN', 'No token parameter supplied');
+        }
+    });
+
     // Catch every other paths
     app.all('*', function(request, response, next) {
         functions.sendError('BADREQ', 'Bad request');
