@@ -28,13 +28,13 @@ var expms = minToMs(30);
 function deleteBook(token, id, callback) {
     resetResult();
 
+    // Check for valid token
     validateAdminToken(token, function(valid) {
         
-        // Valid? :)
         if (valid) {
 
             // Find the book
-            db.books.find({ _id : db.ObjectId(id) }, function(error, data) {
+            db.books.find({ _id : db.ObjectId(id) }).limit(1, function(error, data) {
                     if (error) throw error;
 
                 // Just to make sure it's a valid book
@@ -52,7 +52,7 @@ function deleteBook(token, id, callback) {
                     callback(formatResult('NOTFND', 'Book not found'));
                 }
 
-            }).limit(1);
+            });
 
         } else {
             
@@ -64,22 +64,52 @@ function deleteBook(token, id, callback) {
 
 // Get all books
 // TODO: Finish this first
-function getBooks(callback) {
+function getBooks(options, callback) {
     resetResult();
 
     // Book array
     var books = [];
 
-    // Get all books in the database
-    db.books.find(function(error, data) {
-        books = data;
-        
-        for (var i in books) {
-            delete books[i].reviews;
+    // Sorting query
+    var sort = {};
+    sort[options.sortby] = options.sortorder === 'asc' ? 1 : -1;
 
-            // Replace _od with book_od
-            books[i]['book_id'] = books[i]._id;
-            delete books[i]._id;
+    if (options.lastid
+
+    // Get all books in the database
+    db.books.find({}).limit(options.limit).sort(sort, function(error, data) {
+        books = [];
+        
+        for (var i in data) {
+            delete data[i].reviews;
+
+            if (!options.all) {
+                
+                // Escape keyword
+                var keyword = options.keyword
+                                     .replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g,
+                                             "\\$&");
+                var re = new RegExp(keyword, 'ig');
+                
+                // Check if there's a match on the field
+                if (!data[i][options.searchby].match(re)) {
+                    continue;
+                }
+            }
+
+            // Replace _id with book_id
+            data[i]['book_id'] = data[i]._id;
+            delete data[i]._id;
+
+            var filtered = {};
+
+            // Then we need to filter the fields
+            for (var x in options.fields) {
+                filtered[options.fields[x]] = data[i][options.fields[x]];
+            }
+            
+            // Re-assign the filetered data
+            books.push(filtered);
         }
 
         result['data'] = books;
@@ -93,7 +123,7 @@ function getBook(id, fields, callback) {
     resetResult();
 
     // Look for our book
-    db.books.find({ _id : db.ObjectId(id) }, function(error, data) {
+    db.books.find({ _id : db.ObjectId(id) }).limit(1, function(error, data) {
         if (error) throw error;
 
         var book = {};
@@ -133,7 +163,7 @@ function getBook(id, fields, callback) {
             // ID doesn't exist
             callback(formatResult('INVID', 'Book not found'));
         }
-    }).limit(1);
+    });
 }
 
 // Creation of books
@@ -231,7 +261,7 @@ function adminAuth(username, password, callback) {
     // Let's hash the password
     var hash = doMd5(password);
 
-    db.admins.find({ _id : username, password : hash }, function(error, data) {
+    db.admins.find({ _id : username, password : hash }).limit(1, function(error, data) {
         if (error) throw error;
 
         // Check if found
@@ -355,7 +385,8 @@ function doMd5(password) {
 function validateAdminToken(token, callback) {
 
     // Check if there's a token, and it's expiration is greater than the current date
-    db.admins.find({ token : token, token_exp : { $gt : Date.now() } }, function(error, data) {
+    db.admins.find({ token : token, token_exp : { $gt : Date.now() } })
+             .limit(1, function(error, data) {
         if (error) throw error;
 
         // Length will return 1 if there's a token
@@ -365,7 +396,7 @@ function validateAdminToken(token, callback) {
         } else {
             callback(false);
         }
-    }).limit(1);
+    });
 }
 
 // Creation of admin (upsert)

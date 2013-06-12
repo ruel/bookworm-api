@@ -112,8 +112,71 @@ function process(app) {
 
     app.get('/books', function(request, response) {
         
+        // We got handful of parameters to check
+        // TODO: Embrace a module for this
+        var query = request.query
+
+        // Setup our defaults
+        var options = {
+            searchby    :   'title',
+            all         :   true,
+            keyword     :   '',
+            sortby      :   'book_id',
+            sortorder   :   'asc',
+            fields      :   ['book_id', 'title'],
+            limit       :   20,
+            offset      :   0,
+            fullurl     :   request.protocol + '://' + request.get('host') +
+                            request.path,
+            query       :   request.query
+        };
+
+        // Validate dependent parameters (searching)
+        if (query.searchby !== undefined &&
+            query.keyword !== undefined) {
+            
+            // Add them to options if they both exist
+            options.searchby = query.searchby;
+            options.keyword = query.keyword;
+
+            // Special flag if this option is included
+            options.all = false;
+        }
+
+        // Validate dependent parameters (sorting)
+        if (query.sortby !== undefined &&
+            query.sortorder !== undefined) {
+        
+            // Add them to options if again they both exist
+            options['sortby'] = query.sortby;
+            options['sortorder'] = query.sortorder;
+        }
+
+        // Check if fields exists, and not blank
+        if (query.fields !== undefined &&
+            query.fields.length !== 0) {
+
+            // Split it if it's not, then trim each field
+            // This is too long :(
+
+            var fields = query.fields.split(',');
+
+            for (var i in fields)
+                fields[i] = fields[i].trim();
+
+            // Then push it to options
+            options['fields'] = fields;
+        }
+
+        // Validate offset and limit
+        var limit = parseInt(query.limit);
+        var offset = parseInt(query.offset);
+
+        options.limit = !isNaN(limit) ? limit : options.limit;
+        options.offset = !isNaN(offset) ? offset : options.offset;
+
         // TODO: Finish this first
-        database.getBooks(function(result) {
+        database.getBooks(options, function(result) {
 
             // Check result
             if (result.success) {
