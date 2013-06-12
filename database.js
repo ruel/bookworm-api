@@ -24,21 +24,110 @@ var result;
 // TODO: Is 30 minutes okay?
 var expms = minToMs(30);
 
+// Delete a book
+function deleteBook(token, id, callback) {
+    resetResult();
+
+    validateAdminToken(token, function(valid) {
+        
+        // Valid? :)
+        if (valid) {
+
+            // Find the book
+            db.books.find({ _id : db.ObjectId(id) }, function(error, data) {
+                    if (error) throw error;
+
+                // Just to make sure it's a valid book
+                if (data.length > 0) {
+                    
+                    // Let's delete it!
+                    db.books.remove( { _id : db.ObjectId(id) }, function(error) {
+                        if (error) throw error;
+
+                        callback(result);
+                    });
+                } else {
+                    
+                    // Nope not valid id
+                    callback(formatResult('NOTFND', 'Book not found'));
+                }
+
+            }).limit(1);
+
+        } else {
+            
+            // Token not valid
+            callback(formatResult('TOKENERR', 'Invalid access token'));
+        }
+    });
+}
+
+// Get all books
+// TODO: Finish this first
+function getBooks(callback) {
+    resetResult();
+
+    // Book array
+    var books = [];
+
+    // Get all books in the database
+    db.books.find(function(error, data) {
+        books = data;
+        
+        for (var i in books) {
+            delete books[i].reviews;
+
+            // Replace _od with book_od
+            books[i]['book_id'] = books[i]._id;
+            delete books[i]._id;
+        }
+
+        result['data'] = books;
+
+        callback(result);
+    });
+}
+
 // Get specific book
 function getBook(id, fields, callback) {
     resetResult();
 
     // Look for our book
-    db.books.find({ _id : id }, function(error, data) {
+    db.books.find({ _id : db.ObjectId(id) }, function(error, data) {
         if (error) throw error;
+
+        var book = {};
 
         // Check if there's a record
         if (data.length > 0) {
-
             
-            
-            // It's in our first index
+            // Filter fields
+            if (fields.length > 0) {
 
+                // Filter per field
+                for (var i in fields) {
+                    if (fields[i] === 'book_id')
+                        fields[i] = '_id';
+                    book[fields[i]] = data[0][fields[i]];
+                }
+            } else {
+                
+                // Return all
+                book = data[0];
+            }
+
+            // Rename the id
+            book['book_id'] = book['_id'];
+            delete book._id;
+
+            // Remove reviews, if any
+            if (book.reviews !== undefined)
+                delete book.reviews;
+             
+            // Add book to the result
+            result['data'] = book;
+
+            callback(result);
         } else {
             
             // ID doesn't exist
@@ -303,6 +392,10 @@ function minToMs(min) {
 }
 
 // Export functions
+exports.getBooks = getBooks
+exports.getBook = getBook
+
+exports.deleteBook = deleteBook;
 exports.insertBook = insertBook;
 exports.insertAdmin = insertAdmin;
 exports.adminAuth = adminAuth;

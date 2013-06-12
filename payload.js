@@ -15,6 +15,11 @@ var genObj = {
 // Handles the main processing
 function process(app) {
     
+    // Global
+    app.all('/*', function(request, response, next) {
+        response.setHeader('Access-Control-Allow-Origin', '*'); 
+        next();
+    });
     // Handler for the admin creation
     app.post('/admins', function(request, response, next) {
         checkSecure(request);
@@ -67,9 +72,10 @@ function process(app) {
         }
     });
 
+    // Creating new books!
     app.post('/books', function(request, response, next) {
         checkSecure(request);
-
+     
         var book = request.body;
 
         // We're strict on the token here
@@ -102,6 +108,76 @@ function process(app) {
             // No token
             functions.sendError('NOTKN', 'No token parameter supplied');
         }
+    });
+
+    app.get('/books', function(request, response) {
+        
+        // TODO: Finish this first
+        database.getBooks(function(result) {
+
+            // Check result
+            if (result.success) {
+                delete result.success;
+                response.json(result);
+            } else {
+                softError(result.status, result.message, response);
+            }
+        });
+    });
+
+    // Querying specific book
+    app.get('/books/:id', function(request, response) {
+        
+        var id = request.params.id;
+
+        // Check for the fields query parameter
+        var fields = typeof request.query.fields === 'undefined' ?
+                    [] : request.query.fields.split(',');
+
+        // Trim each field
+        for (var i in fields) {
+            fields[i] = fields[i].trim();
+        }
+        
+        // Get the book information
+        database.getBook(id, fields, function(result) {
+
+            // Check result
+            if (result.success) {
+                delete result.success;
+                response.json(result);
+            } else {
+                softError(result.status, result.message, response);
+            }
+        });
+    });
+
+    // For deleting books
+    app.delete('/books/:id', function(request, response) {
+        checkSecure(request);
+        
+        // Check the token
+        if (request.query.access_token !== undefined) {
+            var token = request.query.access_token;
+            var id = request.params.id;
+
+            // Do the deletion
+            database.deleteBook(token, id, function(result) {
+
+                // Check result
+                if (result.success) {
+                    delete result.success;
+                    response.json(result);
+                } else {
+                    softError(result.status, result.message, response);
+                }
+            });
+        } else {
+
+            // No token!
+            functions.sendError('TKNERR', 'No access token specified');
+        }
+        
     });
 
     // Catch every other paths
