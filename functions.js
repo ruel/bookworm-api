@@ -26,6 +26,7 @@ function sendError(code, message, safe) {
     throw error;
 }
 
+// Callback for app.use() error handling
 function processError(error, request, response, next) {
     
     // Check if error thrown is our error object
@@ -50,7 +51,6 @@ function processError(error, request, response, next) {
         response.json(error);
     }
 }
-
 
 // Lets export our functions
 exports.setUser         = setUser;

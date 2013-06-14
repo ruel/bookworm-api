@@ -3,8 +3,8 @@
  */
 
 // We need this for our database
-var database = require('./database.js');
-var functions = require('./functions.js');
+var database = require(__dirname + '/database.js');
+var functions = require(__dirname + '/functions.js');
 
 // We need this object as template
 var genObj = {
@@ -110,6 +110,34 @@ function process(app) {
         }
     });
 
+    // Update a book
+    app.patch('/books/:id', function(request, response) {
+        checkSecure(request);
+
+        var id = request.params.id;
+        var data = request.body;
+
+        // Check the token, decline if none
+        if (request.query.access_token !== undefined) {
+            var token = request.query.access_token;
+
+            // Let's update
+            database.updateBook(token, id, data, function(result) {
+                if (result.success) {
+                    delete result.success;
+                    response.json(result);
+                } else {
+                    softError(result.status, result.message, response);
+                }
+            });
+        } else {
+            
+            // No token
+            functions.sendError('NOTKN', 'No token parameter supplied');
+        }
+    });
+
+    // Get books, sort, search, and many more. :(
     app.get('/books', function(request, response) {
         
         // We got handful of parameters to check
@@ -125,10 +153,7 @@ function process(app) {
             sortorder   :   'asc',
             fields      :   ['book_id', 'title'],
             limit       :   20,
-            offset      :   0,
-            fullurl     :   request.protocol + '://' + request.get('host') +
-                            request.path,
-            query       :   request.query
+            offset      :   0
         };
 
         // Validate dependent parameters (searching)
@@ -241,6 +266,32 @@ function process(app) {
             functions.sendError('TKNERR', 'No access token specified');
         }
         
+    });
+
+    // Authenticating users
+    app.post('/users/token', function(request, response) {
+        checkSecure(request);
+
+        // Verify the fb_token and the user id
+        if (request.body.fb_token !== undefined &&
+            request.body.fb_id !== undefined) {
+            var fbtoken = request.body.fb_token;
+            var fbid = request.body.fb_id;
+
+            // Query and validate the token
+            database.authUser(fbtoken, fbid, function(result) {
+                if (result.success) {
+                    delete result.success;
+                    response.json(result);
+                } else {
+                    softError(result.status, result.message, response);
+                }
+            });
+        } else {
+            
+            // No FB token / FB id
+            functions.sendError('FBTKNIDERR', 'No Facebook access token or id specified');
+        }
     });
 
     // Catch every other paths

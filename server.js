@@ -9,8 +9,8 @@ var https = require('https');
 var fs = require('fs');
 
 // Required files
-var payload = require('./payload.js');
-var functions = require('./functions');
+var payload = require(__dirname + '/payload.js');
+var functions = require(__dirname + '/functions');
 
 // Global variables
 var app = express();
@@ -20,8 +20,8 @@ app.use(express.bodyParser());
 
 // We need SSL certs!
 var keys = {
-    key     :   fs.readFileSync('keys/server-key.pem'),
-    cert    :   fs.readFileSync('keys/server-cert.pem')
+    key     :   fs.readFileSync(__dirname + '/keys/server-key.pem'),
+    cert    :   fs.readFileSync(__dirname + '/keys/server-cert.pem')
 };
 
 // Servers can use the same callback

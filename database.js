@@ -6,9 +6,11 @@
 var mongojs = require('mongojs');
 var crypto = require('crypto');
 var util = require('util');
+var querystring = require('querystring');
 
 // For the error sending
-var functions = require('./functions.js');
+var functions = require(__dirname + '/functions.js');
+var jsonreq = require(__dirname + '/jsonreq.js');
 
 // Our collections, db variables and such
 var collections = ['users', 'admins', 'books', 'reviews', 'authors'];
@@ -23,6 +25,117 @@ var result;
 // Token expiration in milliseconds
 // TODO: Is 30 minutes okay?
 var expms = minToMs(30);
+
+// Authenticate the user
+// We don't have signups, so we'll just upsert here
+function authUser(fb_token, uid, callback) {
+    resetResult();
+
+    // Here, we'll query the /me from Graph API
+    // And return the id of the facebook user
+    // Then check it with the passed id for validation
+    jsonreq.get('graph.facebook.com', '/me', { 
+        access_token : fb_token 
+    }, true, function(data) {
+        if (data.error === undefined) {
+            if (data.id === uid) {
+                
+                // We got a match!
+                // Generate a token
+                var token = generateToken(uid);
+                // Upsert to the database
+                db.users.update( { uid : uid }, { $set : {
+                        uid         :   uid,
+                        token       :   token,
+                        token_exp   :   Date.now() + expms
+                    }
+                }, { upsert : true }, function() {
+                    
+                    // Append the access token
+                    result['data'] = {
+                        access_token    :   token
+                    };
+                                        
+                    // Success!
+                    callback(result);
+                });
+            } else {
+                
+                // No match, return an error
+                callback(formatResult('TOKMISM', 'Facebook access token mismatch'))
+            }
+        } else {
+            
+            // Probably token is invalid
+            callback(formatResult('INVFBTOKEN', 'Invalid Facebook access token'));
+        }
+    });
+}
+
+// Updating a book
+function updateBook(token, id, book, callback) {
+    resetResult();
+
+    // Validate again
+    validateAdminToken(token, function(valid) {
+        
+        if (valid) {
+        
+            // Let's find first
+            db.books.find({ _id : db.ObjectId(id) }).limit(1, function(error, data) {
+                if (error) throw error;
+
+                if (data.length > 0) {
+
+                    // Remove unnecessary fields
+                    delete book.book_id;
+                    delete book._id;
+
+                    // Validate the fields
+                    var dfields = Object.keys(data[0]);
+                    var bfields = Object.keys(book);
+                    for (var i in bfields) {
+                        var found = false;
+
+                        // Check if it exist on the data fields
+                        for (var x in dfields) {
+                            if (bfields[i] === dfields[x]) {
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        
+                        // Delete if they are not found
+                        if (!found)
+                            delete book[bfields[i]];
+                    }
+                   
+                    // Update date_modified
+                    book['date_modified'] = Date.now();
+                    
+                    // Construct the object
+                    update = { $set : book };
+
+                    // Do the update
+                    db.books.update({ _id : db.ObjectId(id) }, update, function(error, data) {
+                        if (error) throw error;
+
+                        callback(result);
+                    });
+                } else {
+                    
+                    // ID not found
+                    callback(formatResult('IDNOTFOUND', 'Specified book id was not found'));
+                }
+            });
+        } else {
+            
+            // Invalid token
+            callback(formatResult('TOKENERR', 'Invalid access_token'));
+        }
+    });
+}
 
 // Delete a book
 function deleteBook(token, id, callback) {
@@ -63,7 +176,6 @@ function deleteBook(token, id, callback) {
 }
 
 // Get all books
-// TODO: Finish this first
 function getBooks(options, callback) {
     resetResult();
 
@@ -74,47 +186,56 @@ function getBooks(options, callback) {
     var sort = {};
     sort[options.sortby] = options.sortorder === 'asc' ? 1 : -1;
 
-    if (options.lastid
+    // Searching, somewhat like the hard part of optimization
+    var query = {};
 
-    // Get all books in the database
-    db.books.find({}).limit(options.limit).sort(sort, function(error, data) {
-        books = [];
+    // Check if there's a search performed
+    if (!options.all) {
+
+        // Escape keyword
+        var keyword = options.keyword
+                             .replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g,
+                                     "\\$&");
         
-        for (var i in data) {
-            delete data[i].reviews;
+        // Create query object
+        query[options.searchby] = { $regex : keyword, $options : 'i' };
+    }
 
-            if (!options.all) {
-                
-                // Escape keyword
-                var keyword = options.keyword
-                                     .replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g,
-                                             "\\$&");
-                var re = new RegExp(keyword, 'ig');
-                
-                // Check if there's a match on the field
-                if (!data[i][options.searchby].match(re)) {
-                    continue;
-                }
-            }
+    db.books.count(function(error, count) {
+        if (error) throw error;
 
-            // Replace _id with book_id
-            data[i]['book_id'] = data[i]._id;
-            delete data[i]._id;
+        // Get all books in the database
+        db.books.find(query).skip(options.offset).limit(options.limit).sort(sort, function(error, data) {
+            books = [];
 
-            var filtered = {};
-
-            // Then we need to filter the fields
-            for (var x in options.fields) {
-                filtered[options.fields[x]] = data[i][options.fields[x]];
-            }
+            // Get the length, if it's limit + 1, then we have a next page
+            var len = data.length;
             
-            // Re-assign the filetered data
-            books.push(filtered);
-        }
+            for (var i in data) {
+                delete data[i].reviews;
 
-        result['data'] = books;
+                // Replace _id with book_id
+                data[i]['book_id'] = data[i]._id;
+                delete data[i]._id;
 
-        callback(result);
+                var filtered = {};
+
+                // Then we need to filter the fields
+                for (var x in options.fields) {
+                    filtered[options.fields[x]] = data[i][options.fields[x]];
+                }
+                
+                // Re-assign the filetered data
+                books.push(filtered);
+            }
+
+            // Add books array
+            result['data'] = books;
+
+            result['count'] = count;
+
+            callback(result);
+        });
     });
 }
 
@@ -423,9 +544,12 @@ function minToMs(min) {
 }
 
 // Export functions
-exports.getBooks = getBooks
-exports.getBook = getBook
+exports.getBooks = getBooks;
+exports.getBook = getBook;
 
+exports.authUser = authUser;
+
+exports.updateBook = updateBook;
 exports.deleteBook = deleteBook;
 exports.insertBook = insertBook;
 exports.insertAdmin = insertAdmin;
