@@ -15,9 +15,10 @@ var jsonreq = require(__dirname + '/jsonreq.js');
 // Our collections, db variables and such
 var collections = ['users', 'admins', 'books'];
 var dbname = 'bookworm';
+var host = '50.18.2.231';
 
 // Let's connect, shall we
-var db = mongojs.connect(dbname, collections);
+var db = mongojs.connect(host + '/' + dbname, collections);
 
 // This is for the result object
 var result;
