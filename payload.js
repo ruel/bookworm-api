@@ -5,6 +5,7 @@
 // We need this for our database
 var database = require(__dirname + '/database.js');
 var functions = require(__dirname + '/functions.js');
+var cron = require('cron').CronJob;
 
 // We need this object as template
 var genObj = {
@@ -12,14 +13,35 @@ var genObj = {
     message : 'Operation completed successfully'
 };
 
+// Views cache
+// Writing to the database on every view is
+// (I think) unhealthy
+var views = [];
+var down = [];
+
 // Handles the main processing
 function process(app) {
-    
-    // Global
-    app.all('/*', function(request, response, next) {
-        response.setHeader('Access-Control-Allow-Origin', '*'); 
-        next();
+
+    // Get all authors
+    app.get('/authors', function(request, response) {
+        
+        // Straightforward as before
+        database.getAuthors(function(result) {
+            delete result.success;
+            response.json(result);
+        });
     });
+
+    // Get all tags
+    app.get('/tags', function(request, response) {
+        
+        // Pretty straightforwards here
+        database.getTags(function(result) {
+            delete result.success;
+            response.json(result);
+        });
+    });
+
     // Handler for the admin creation
     app.post('/admins', function(request, response, next) {
         checkSecure(request);
@@ -153,6 +175,8 @@ function process(app) {
             sortorder   :   'asc',
             fields      :   ['book_id', 'title'],
             limit       :   20,
+            tag         :   '',
+            author      :   '',
             offset      :   0
         };
 
@@ -175,6 +199,20 @@ function process(app) {
             // Add them to options if again they both exist
             options['sortby'] = query.sortby;
             options['sortorder'] = query.sortorder;
+        }
+
+        // Check if there's a tag search
+        if (query.tag !== undefined) {
+            
+            // Set the tag
+            options.tag = query.tag;
+        }
+
+        // Check for author search
+        if (query.author !== undefined) {
+            
+            // Set author option
+            options.author = query.author;
         }
 
         // Check if fields exists, and not blank
@@ -213,6 +251,43 @@ function process(app) {
         });
     });
 
+    // Gets a specific link, and invokes the download count
+    app.get('/books/:id/download_link', function(request, response) {
+        
+        var id = request.params.id;
+
+        // Get download link
+        database.getDownLink(id, function(result) {
+            if (result.success) {
+                delete result.success;
+
+                // Adding the views handler here
+                // We want that before a successful return of the books
+                var found = false;
+                var nd = 0;
+                for (var i in down) {
+                    if (down[i]._id === result.data.book_id.toString()) {
+                        found = true;
+                        down[i].down++;
+                        nd = down[i].down;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    var d = {
+                        _id : result.data.book_id.toString(),
+                        down : 1
+                    };
+                    down.push(d);
+                }
+
+                response.json(result);
+            }
+        });
+
+    });
+
     // Querying specific book
     app.get('/books/:id', function(request, response) {
         
@@ -233,7 +308,48 @@ function process(app) {
             // Check result
             if (result.success) {
                 delete result.success;
+                
+                // Adding the views handler here
+                // We want that before a successful return of the books
+                var found = false;
+                var nv = 0;
+                var nd = 0;
+
+                for (var i in views) {
+                    if (views[i]._id === result.data.book_id.toString()) {
+                        found = true;
+                        views[i].views++;
+                        nv = views[i].views;
+                        break;
+                    }
+                }
+
+                for (var i in down) {
+                    if (down[i]._id === result.data.book_id.toString()) {
+                        nd = down[i].down;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    var v = {
+                        _id : result.data.book_id.toString(),
+                        views : 1
+                    };
+                    nv = 1;
+                    views.push(v);
+                }
+
+                if (result.data.view_count !== undefined) {
+                    result.data.view_count = nv;
+                }
+
+                if (result.data.download_count !== undefined) {
+                    result.data.download_count = nd;
+                }
+                
                 response.json(result);
+
             } else {
                 softError(result.status, result.message, response);
             }
@@ -294,6 +410,88 @@ function process(app) {
         }
     });
 
+    // Handler for getting all reviews
+    app.get('/books/:id/reviews', function(request, response) {
+        
+        var book_id = request.params.id;
+
+        // Validate and set defaults to offset and limit
+        var offset = typeof request.query.offset === 'undefined' ? 0 : request.query.offset;
+        var limit = typeof request.query.limit === 'undefined' ? 10 : request.query.limit;
+
+        // Pull reviews from database
+        database.getReviews(book_id, offset, limit, function(result) {
+            if (result.success) {
+                delete result.success;
+                response.json(result);
+            } else {
+                softError(result.status, result.message, response);
+            }
+        });
+    });
+
+    // Deleting a review
+    app.delete('/books/:id/reviews/:uid', function(request, response) {
+        checkSecure(request);
+
+        // Validate the token again
+        if (request.query.access_token !== undefined) {
+            var token = request.query.access_token;
+            var book_id = request.params.id;
+
+            // Let's do the posting
+            database.removeReview(token, book_id, function(result) {
+                if (result.success) {
+                    delete result.success;
+                    response.json(result);
+                } else {
+                    softError(result.status, result.message, response);
+                }
+            });
+        } else {
+
+            // Invalid access token
+            functions.sendError('NOTKN', 'No access token specified');
+        }
+    });
+        
+    // Posting a review
+    app.post('/books/:id/reviews', function(request, response) {
+        checkSecure(request);
+
+        // Validate the token first
+        if (request.query.access_token !== undefined) {
+            var token = request.query.access_token;
+            var book_id = request.params.id;
+
+            // Validate fields
+            if (request.body.rating !== undefined &&
+                request.body.comment !== undefined) {
+
+                request.body['book_id'] = book_id;
+
+                // Let's do the posting
+                database.addReview(token, request.body, function(result) {
+                    if (result.success) {
+                        delete result.success;
+                        response.json(result);
+                    } else {
+                        softError(result.status, result.message, response);
+                    }
+                });
+            } else {
+                
+                // Invalid POST data
+                functions.sendError('INVPOST', 'Invalid POST data');
+            }
+        } else {
+
+            // Invalid access token
+            functions.sendError('NOTKN', 'No access token specified');
+        }
+    });
+
+
     // Catch every other paths
     app.all('*', function(request, response, next) {
         functions.sendError('BADREQ', 'Bad request');
@@ -323,3 +521,26 @@ function checkSecure(request) {
 
 // Export needed functions
 exports.process = process;
+
+// Cron job for views and downloads
+new cron('* * * * *', function() {
+    console.log(views);
+    // If our cache is empty, fill in the values
+    if (views.length === 0) {
+        database.getViewCounts(function(v) {
+            views.push(v);
+        });
+    } else {
+        database.updateViews(views);
+    }
+
+    if (down.length === 0) {
+        database.getDownCounts(function(d) {
+            down.push(d);
+        });
+    } else {
+        database.updateDown(down);
+    }
+
+}, null, true, null).start();
+

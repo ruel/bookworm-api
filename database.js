@@ -13,7 +13,7 @@ var functions = require(__dirname + '/functions.js');
 var jsonreq = require(__dirname + '/jsonreq.js');
 
 // Our collections, db variables and such
-var collections = ['users', 'admins', 'books', 'reviews', 'authors'];
+var collections = ['users', 'admins', 'books'];
 var dbname = 'bookworm';
 
 // Let's connect, shall we
@@ -25,6 +25,353 @@ var result;
 // Token expiration in milliseconds
 // TODO: Is 30 minutes okay?
 var expms = minToMs(30);
+
+var books_cache = [];
+
+// Old cache for montiroing
+o_views = [];
+o_down = [];
+
+// Getting download link
+function getDownLink(book_id, callback) {
+    resetResult();
+
+    // Get a book with the id
+    db.books.find({ _id : db.ObjectId(book_id) }).limit(1, function(error, books) {
+        if (error) throw error;
+       
+        if (books.length > 0) {
+
+            result['data'] = {
+                book_id : books[0]._id,
+                download_url : books[0].download_url
+            };
+
+            callback(result);
+        } else {
+            callback(formatResult('INVID', 'Book ID not found'));
+        }
+    });
+}
+
+// Updating downloads
+function updateDown(down) {
+    
+    // Loop through each
+    for (var i in down) {
+        var stop = false;
+
+        // We need to minimize the writes,
+        // so let's check if there's a change first
+        for (var o in o_down) {
+            if (down[i]._id.toString() === o_down[o]._id.toString()) {
+                if (down[i].down === o_down[o].down) {
+                    stop = true;
+                } else {
+                    o_down[o].down = down[i].down; 
+                }
+            }
+        }
+
+        if (stop) continue;
+
+        // Do the write
+        db.books.update({ _id : db.ObjectId(down[i]._id) }, {
+            $set : {
+                download_count : down[i].down
+            }
+        });
+    }
+}
+// Updating views
+function updateViews(views) {
+    
+    // Loop through each
+    for (var i in views) {
+        var stop = false;
+
+        // We need to minimize the writes,
+        // so let's check if there's a change first
+        for (var o in o_views) {
+            if (views[i]._id.toString() === o_views[o]._id.toString()) {
+                if (views[i].views === o_views[o].views) {
+                    stop = true;
+                } else {
+                    o_views[o].views = views[i].views;
+                }
+            }
+        }
+
+        if (stop) continue;
+
+        // Do the write
+        db.books.update({ _id : db.ObjectId(views[i]._id) }, {
+            $set : {
+                view_count : views[i].views
+            }
+        });
+    }
+}
+
+// Get all downloads
+function getDownCounts(callback) {
+    
+    // Get all books
+    db.books.find(function(error, data) {
+        if (error) throw error;
+
+        for(var i in data) {
+            var d = {
+                _id : data[i]._id.toString(),
+                down : data[i].download_count
+            }
+
+            callback(d);
+            o_down.push(d);
+        }
+    });
+}
+
+// Get all views
+function getViewCounts(callback) {
+    
+    // Get all books
+    db.books.find(function(error, data) {
+        if (error) throw error;
+
+        for(var i in data) {
+            var v = {
+                _id : data[i]._id.toString(),
+                views : data[i].view_count
+            }
+            callback(v);
+            o_views.push(v);
+        }
+    });
+}
+// Get all the authors
+function getAuthors(callback) {
+    resetResult();
+
+    // Let's get all distinct values
+    db.books.distinct('authors', function(error, authors) {
+        if (error) throw error;
+
+        result['data'] = authors.sort();
+        callback(result);
+    });
+    
+}
+
+// Get all the tags
+function getTags(callback) {
+    resetResult();
+
+    // Let's get all distinct values
+    db.books.distinct('tags', function(error, tags) {
+        if (error) throw error;
+
+        result['data'] = tags.sort();
+        callback(result);
+    });
+}
+
+// Delete reviews
+function removeReview(token, book_id, callback) {
+    resetResult();
+
+    // Validate
+    validateUserToken(token, function(valid, uid) {
+        
+        if (valid) {
+
+            // Again, verify the book
+            db.books.find({ 
+                _id : db.ObjectId(book_id),
+                reviews : {
+                    $elemMatch : {
+                        uid : uid
+                    }
+                }
+            }).limit(1, function(error, data) {
+                if (error) throw error;
+
+                // Check if valid book
+                if (data.length > 0) {
+
+                    // Pull the review
+                    db.books.update({ _id : db.ObjectId(book_id) }, {
+                        $pull : {
+                            reviews : {
+                                uid : uid
+                            }
+                        }
+                    }, function(error, count) {
+                        if (error) throw error;
+                        
+                        // Rating average
+                        var rate_ave = 0;
+
+                        // Make it 0 if there's no review left                        
+                        if (count === 0 || data[0].reviews.length > 1) {
+                            var rate_sum = 0;
+
+                            for (var i in data[0].reviews) {
+                                if (data[0].reviews[i].uid !== uid)
+                                    rate_sum += parseInt(data[0].reviews[i].rating);
+                            }
+
+                            rate_sum += parseInt(review.rating);
+                            rate_ave = rate_sum / (data[0].reviews.length + (1 - count));
+                        }
+
+                        // Now, we can update the rating average
+                        db.books.update({ 
+                            _id : db.ObjectId(book_id) 
+                        }, {
+                            $set : {
+                                rating_average : rate_ave
+                            }
+                        }, function(erroru) {
+                            if (erroru) throw erroru;
+
+                            // At last
+                            callback(result);
+                        });
+                    });
+                } else {
+                
+                    // Nope
+                    callback(formatResult('INVREV', 'Review does not exist'));
+                }
+            });
+        } else {
+        
+            // Not valid
+            callback(formatResult('INVTOKEN', 'User token not valid'));
+        }
+    });
+}
+
+// Get reviews of specific book
+function getReviews(book_id, offset, limit, callback) {
+    resetResult();
+
+    // Verify the book
+    db.books.find({ _id : db.ObjectId(book_id) })
+            .limit(1, function(error, data) {
+        if (error) throw error;
+        
+        // Check if it's a valid book id
+        if (data.length > 0) {
+            
+            // Trim based on the offset
+            var reviews = data[0].reviews.slice(offset, limit);
+
+            // Format the result
+            result['data'] = {
+                book_id : data[0]._id,
+                review_count : data[0].reviews.length,
+                reviews : reviews
+            };
+
+            // Return the results
+            callback(result);
+        } else {
+        
+            // Nope
+            callback(formatResult('NOTFOUND', 'Book id not found'));
+        }
+    });
+}
+
+// Validating user token
+function validateUserToken(token, callback) {
+    db.users.find({ token : token, token_exp : { $gt : Date.now() } })
+            .limit(1, function(error, data) {
+        if (error) throw error;
+
+        // Check if a record exist
+        if (data.length > 0) {
+            callback(true, data[0].uid);
+        } else {
+            callback(false);
+        }
+    });
+}
+
+// Adding reviews
+function addReview(token, review, callback) {
+    resetResult();
+    
+    // Verify the token
+    // Incoming nested async functions
+    validateUserToken(token, function(valid, uid) {
+
+        if (valid) {
+            
+            // Let's query for the book next
+            // But then this time, we should check
+            // Only those with no uid matching our uid
+            db.books.find({ 
+                _id : db.ObjectId(review.book_id),
+                reviews : {
+                    $not : {
+                        $elemMatch : {
+                            uid : uid
+                        }
+                    }
+                }
+            }).limit(1, function(errorb, books) {
+                if (errorb) throw errorb;
+
+                if (books.length > 0) {
+                     
+                    // Rating average
+                    var rate_ave = 0;
+                    var rate_sum = 0;
+
+                    for (var i in books[0].reviews) {
+                        rate_sum += parseInt(books[0].reviews[i].rating);
+                    }
+
+                    rate_sum += parseInt(review.rating);
+                    rate_ave = rate_sum / (books[0].reviews.length + 1);
+
+                    // Now, we can update the reviews collection
+                    db.books.update({ 
+                        _id : db.ObjectId(review.book_id) 
+                    }, {
+                        $push : {
+                            reviews : {
+                                uid : uid,
+                                rating : review.rating,
+                                comment : review.comment,
+                                date_created : Date.now()
+                            }
+                        },
+                        $set : {
+                            rating_average : rate_ave
+                        }
+                    }, function(erroru) {
+                        if (erroru) throw erroru;
+                            
+                        // Finally
+                        callback(result);
+                    });
+                } else {
+                    
+                    // There's no such book
+                    callback(formatResult('REVERR', 'Review for the specific user already posted'));
+                }
+            });
+        } else {
+            
+            // Invalid user token
+            callback(formatResult('INVTOKEN', 'Invalid user token'));
+        }
+    });
+}
 
 // Authenticate the user
 // We don't have signups, so we'll just upsert here
@@ -43,17 +390,20 @@ function authUser(fb_token, uid, callback) {
                 // We got a match!
                 // Generate a token
                 var token = generateToken(uid);
+                var token_exp = Date.now() + expms;
+
                 // Upsert to the database
                 db.users.update( { uid : uid }, { $set : {
                         uid         :   uid,
                         token       :   token,
-                        token_exp   :   Date.now() + expms
+                        token_exp   :   token_exp
                     }
                 }, { upsert : true }, function() {
                     
                     // Append the access token
                     result['data'] = {
-                        access_token    :   token
+                        access_token        :   token,
+                        access_token_exp    :   token_exp
                     };
                                         
                     // Success!
@@ -201,11 +551,26 @@ function getBooks(options, callback) {
         query[options.searchby] = { $regex : keyword, $options : 'i' };
     }
 
-    db.books.count(function(error, count) {
+    // Check for a tag search
+    if (options.tag.length > 0) {
+        
+        // Rebuild the query
+        query['tags'] = options.tag;
+    }
+
+    // We need this same as tags
+    if (options.author.length > 0) {
+        query['authors'] = options.author;
+    }
+
+    db.books.count(query, function(error, count) {
         if (error) throw error;
 
+        // For unlimited
+        var nlimit = options.limit <= 0 ? options.limit : options.limit + 1;
+
         // Get all books in the database
-        db.books.find(query).skip(options.offset).limit(options.limit).sort(sort, function(error, data) {
+        db.books.find(query).skip(options.offset).limit(nlimit).sort(sort, function(error, data) {
             books = [];
 
             // Get the length, if it's limit + 1, then we have a next page
@@ -227,6 +592,22 @@ function getBooks(options, callback) {
                 
                 // Re-assign the filetered data
                 books.push(filtered);
+            }
+
+            // Pop the extra
+            if (len > options.limit) {
+                books.pop();
+
+                result['has_next'] = true;
+            } else {
+                result['has_next'] = false;
+            }
+
+            // Append prev validator
+            if (options.offset <= 0) {
+                result['has_prev'] = false;
+            } else {
+                result['has_prev'] = true;
             }
 
             // Add books array
@@ -334,10 +715,6 @@ function insertBook(token, data, callback) {
             book['date_created'] = Date.now();
             book['date_modified'] = Date.now();
 
-            // Make sure to create the authors first
-            // Or not. It's synchronized
-            insertAuthors(book.authors);
-
             // Let's save
             db.books.save(book, function(error, data) {
                 if (error) throw error;
@@ -358,21 +735,6 @@ function insertBook(token, data, callback) {
             callback(formatResult('INVTOKEN', 'Token not valid'));
         }
     });
-}
-
-// We should have authors first though
-// TODO: Sync okay?
-function insertAuthors(authors) {
-    resetResult();
-
-    for (var i in authors) {
-        name = authors[i];
-
-        // Our _id will be the name
-        db.authors.save({ _id : name }, function (error) {
-            if (error) throw error;
-        });
-    }
 }
 
 // Checks for admin authentication, and returns a token
@@ -546,7 +908,19 @@ function minToMs(min) {
 // Export functions
 exports.getBooks = getBooks;
 exports.getBook = getBook;
+exports.getReviews = getReviews;
+exports.getTags = getTags;
+exports.getAuthors = getAuthors;
 
+exports.getDownLink = getDownLink;
+
+exports.getViewCounts = getViewCounts;
+exports.getDownCounts = getDownCounts;
+exports.updateViews = updateViews;
+exports.updateDown = updateDown;
+
+exports.addReview = addReview;
+exports.removeReview = removeReview;
 exports.authUser = authUser;
 
 exports.updateBook = updateBook;

@@ -15,8 +15,24 @@ var functions = require(__dirname + '/functions');
 // Global variables
 var app = express();
 
-// We need this for the POST body
-app.use(express.bodyParser());
+app.configure(function() {
+
+    // Global headers
+    app.use(function(request, response, next) {
+        
+        // CORS
+        response.header('Access-Control-Allow-Origin', '*'); 
+        response.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE');
+        response.header('Access-Control-Allow-Headers', 'Content-Type, Content-Length'); 
+          
+        next();
+    });
+
+    // We need this for the POST body
+    app.use(express.bodyParser());
+
+    app.use(app.router);
+});
 
 // We need SSL certs!
 var keys = {
