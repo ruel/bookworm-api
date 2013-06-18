@@ -3,8 +3,8 @@
  */
 
 // We need this for our database
-var database = require(__dirname + '/database.js');
-var functions = require(__dirname + '/functions.js');
+var database = require('./database.js');
+var functions = require('./functions.js');
 var cron = require('cron').CronJob;
 
 // We need this object as template
@@ -524,7 +524,7 @@ exports.process = process;
 
 // Cron job for views and downloads
 new cron('* * * * *', function() {
-    console.log(views);
+
     // If our cache is empty, fill in the values
     if (views.length === 0) {
         database.getViewCounts(function(v) {

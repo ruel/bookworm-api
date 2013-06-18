@@ -9,8 +9,8 @@ var https = require('https');
 var fs = require('fs');
 
 // Required files
-var payload = require(__dirname + '/payload.js');
-var functions = require(__dirname + '/functions');
+var payload = require('./payload.js');
+var functions = require('./functions.js');
 
 // Global variables
 var app = express();
@@ -44,10 +44,10 @@ var keys = {
 // I've read that 'app' is actually a callback
 // http://expressjs.com/api.html#app.listen
 http.createServer(app).listen(8080);
-https.createServer(keys, app).listen(443);
+//https.createServer(keys, app).listen(443);
 
 // Pass app to the payload
 payload.process(app);
 
 // Let's lower down our privilege
-functions.setUser('www-data');
+//functions.setUser('www-data');

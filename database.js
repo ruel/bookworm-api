@@ -15,7 +15,7 @@ var jsonreq = require(__dirname + '/jsonreq.js');
 // Our collections, db variables and such
 var collections = ['users', 'admins', 'books'];
 var dbname = 'bookworm';
-var host = '50.18.2.231';
+var host = 'jpbelmonte.pe.training.voyager.ph';
 
 // Let's connect, shall we
 var db = mongojs.connect(host + '/' + dbname, collections);
@@ -530,6 +530,22 @@ function deleteBook(token, id, callback) {
 function getBooks(options, callback) {
     resetResult();
 
+    var hash = doMd5(JSON.stringify(options));
+
+    var found = false;
+
+    for (var i in books_cache) {
+        if (hash === books_cache[i].hash) {
+            console.log("Using cache");
+            callback(JSON.parse(books_cache[i].result));
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        console.log("Generating cache");
+
     // Book array
     var books = [];
 
@@ -616,9 +632,11 @@ function getBooks(options, callback) {
 
             result['count'] = count;
 
+            books_cache.push({ hash: hash, result: JSON.stringify(result) });
             callback(result);
         });
     });
+    }
 }
 
 // Get specific book
