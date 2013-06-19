@@ -43,7 +43,11 @@ var keys = {
 // Servers can use the same callback
 // I've read that 'app' is actually a callback
 // http://expressjs.com/api.html#app.listen
+<<<<<<< HEAD
 http.createServer(app).listen(1337);
+=======
+http.createServer(app).listen(443);
+>>>>>>> e33826bf2016a361529656bb42f03ef9818c9eda
 https.createServer(keys, app).listen(443);
 
 // Pass app to the payload
