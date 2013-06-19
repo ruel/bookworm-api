@@ -519,7 +519,7 @@ function checkSecure(request) {
 exports.process = process;
 
 // Cron job for views and downloads
-new cron('* * * * *', function() {
+new cron('10/* * * * *', function() {
 
     // If our cache is empty, fill in the values
     if (views.length === 0) {
