@@ -387,7 +387,7 @@ Retrieves an array with distinct tags
 Retrieves an array with distinct authors
 
 ##### Example
-    http://node.ruel.me/tags
+    http://node.ruel.me/authors
 
 ##### Output
     {
