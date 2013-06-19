@@ -22,8 +22,8 @@ app.configure(function() {
         
         // CORS
         response.header('Access-Control-Allow-Origin', '*'); 
-        response.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE');
-        response.header('Access-Control-Allow-Headers', 'Content-Type, Content-Length'); 
+        response.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS, DELETE');
+        response.header('Access-Control-Allow-Headers', 'Accept, Origin, Content-Type, Content-Length'); 
           
         next();
     });

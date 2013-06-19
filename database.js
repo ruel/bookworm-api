@@ -550,6 +550,7 @@ function updateBook(token, id, book, callback) {
                         // Clear other cache
                         tags_cache = [];
                         authors_cache = [];
+                        books_cache = [];
 
                         // Clear cache for id
                         for (var i in book_cache) {
