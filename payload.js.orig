@@ -415,8 +415,12 @@ function process(app) {
         
         var book_id = request.params.id;
 
+        // Validate and set defaults to offset and limit
+        var offset = typeof request.query.offset === 'undefined' ? 0 : request.query.offset;
+        var limit = typeof request.query.limit === 'undefined' ? 10 : request.query.limit;
+
         // Pull reviews from database
-        database.getReviews(book_id, function(result) {
+        database.getReviews(book_id, offset, limit, function(result) {
             if (result.success) {
                 delete result.success;
                 response.json(result);
@@ -520,7 +524,11 @@ exports.process = process;
 
 // Cron job for views and downloads
 new cron('* * * * *', function() {
+<<<<<<< HEAD
 
+=======
+    console.log(views);
+>>>>>>> e33826bf2016a361529656bb42f03ef9818c9eda
     // If our cache is empty, fill in the values
     if (views.length === 0) {
         database.getViewCounts(function(v) {

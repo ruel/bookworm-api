@@ -15,9 +15,16 @@ var jsonreq = require(__dirname + '/jsonreq.js');
 // Our collections, db variables and such
 var collections = ['users', 'admins', 'books'];
 var dbname = 'bookworm';
+<<<<<<< HEAD
 
 // Let's connect, shall we
 var db = mongojs.connect(dbname, collections);
+=======
+var host = '50.18.2.231';
+
+// Let's connect, shall we
+var db = mongojs.connect(host + '/' + dbname, collections);
+>>>>>>> e33826bf2016a361529656bb42f03ef9818c9eda
 
 // This is for the result object
 var result;
@@ -26,12 +33,7 @@ var result;
 // TODO: Is 30 minutes okay?
 var expms = minToMs(30);
 
-// Caching variables
 var books_cache = [];
-var book_cache = [];
-var tags_cache = [];
-var authors_cache = [];
-var reviews_cache = [];
 
 // Old cache for montiroing
 o_views = [];
@@ -158,22 +160,13 @@ function getViewCounts(callback) {
 function getAuthors(callback) {
     resetResult();
 
-    // Check if cache is empty
-    if (authors_cache.length < 1) {
+    // Let's get all distinct values
+    db.books.distinct('authors', function(error, authors) {
+        if (error) throw error;
 
-        // Let's get all distinct values
-        db.books.distinct('authors', function(error, authors) {
-            if (error) throw error;
-
-            result['data'] = authors.sort();
-            authors_cache.push(JSON.stringify(result));
-            callback(result);
-        });
-    } else {
-
-        // Return the cache
-        callback(JSON.parse(authors_cache[0]));
-    }
+        result['data'] = authors.sort();
+        callback(result);
+    });
     
 }
 
@@ -181,20 +174,13 @@ function getAuthors(callback) {
 function getTags(callback) {
     resetResult();
 
-    // Check if cache is empty
-    if (tags_cache.length < 1) {
+    // Let's get all distinct values
+    db.books.distinct('tags', function(error, tags) {
+        if (error) throw error;
 
-        // Let's get all distinct values
-        db.books.distinct('tags', function(error, tags) {
-            if (error) throw error;
-
-            result['data'] = tags.sort();
-            tags_cache.push(JSON.stringify(result));
-            callback(result);
-        });
-    } else {
-        callback(JSON.parse(tags_cache[0]));
-    }
+        result['data'] = tags.sort();
+        callback(result);
+    });
 }
 
 // Delete reviews
@@ -255,23 +241,6 @@ function removeReview(token, book_id, callback) {
                             }
                         }, function(erroru) {
                             if (erroru) throw erroru;
-                            
-                            // Clear the cache again
-                            books_cache = []
-
-                            // Clear reviews cache
-                            for (var i in reviews_cache) {
-                                if (reviews_cache[i].hash === book_id) {
-                                    delete reviews_cache[i];
-                                }
-                            }
-
-                            // And for specific books
-                            for (var i in book_cache) {
-                                if (book_cache[i].hash.indexOf(book_id) === 0) {
-                                    delete book_cache[i];
-                                }
-                            }
 
                             // At last
                             callback(result);
@@ -292,54 +261,35 @@ function removeReview(token, book_id, callback) {
 }
 
 // Get reviews of specific book
-function getReviews(book_id, callback) {
+function getReviews(book_id, offset, limit, callback) {
     resetResult();
 
-    // Hash again
-    var hash = book_id;
-    var found = false;
+    // Verify the book
+    db.books.find({ _id : db.ObjectId(book_id) })
+            .limit(1, function(error, data) {
+        if (error) throw error;
+        
+        // Check if it's a valid book id
+        if (data.length > 0) {
+            
+            // Trim based on the offset
+            var reviews = data[0].reviews.slice(offset, limit);
 
-    // Check the cache
-    for (var i in reviews_cache) {
-        if (hash === reviews_cache[i].hash) {
-            callback(JSON.parse(reviews_cache[i].result));
-            found = true;
-            break;
+            // Format the result
+            result['data'] = {
+                book_id : data[0]._id,
+                review_count : data[0].reviews.length,
+                reviews : reviews
+            };
+
+            // Return the results
+            callback(result);
+        } else {
+        
+            // Nope
+            callback(formatResult('NOTFOUND', 'Book id not found'));
         }
-    }
-
-    // Generate cache if not found
-    if (!found) {
-
-        // Verify the book
-        db.books.find({ _id : db.ObjectId(book_id) })
-                .limit(1, function(error, data) {
-            if (error) throw error;
-            
-            // Check if it's a valid book id
-            if (data.length > 0) {
-                
-                var reviews = data[0].reviews;
-
-                // Format the result
-                result['data'] = {
-                    book_id : data[0]._id,
-                    review_count : data[0].reviews.length,
-                    reviews : reviews
-                };
-
-                // Push the cache
-                reviews_cache.push({ hash : hash, result : JSON.stringify(result) });
-
-                // Return the results
-                callback(result);
-            } else {
-            
-                // Nope
-                callback(formatResult('NOTFOUND', 'Book id not found'));
-            }
-        });
-    }
+    });
 }
 
 // Validating user token
@@ -413,23 +363,6 @@ function addReview(token, review, callback) {
                     }, function(erroru) {
                         if (erroru) throw erroru;
                             
-                        // Clear the cache again
-                        books_cache = []
-
-                        // Clear reviews cache
-                        for (var i in reviews_cache) {
-                            if (reviews_cache[i].hash === book_id) {
-                                delete reviews_cache[i];
-                            }
-                        }
-
-                        // And for specific books
-                        for (var i in book_cache) {
-                            if (book_cache[i].hash.indexOf(book_id) === 0) {
-                                delete book_cache[i];
-                            }
-                        }
-
                         // Finally
                         callback(result);
                     });
@@ -546,17 +479,6 @@ function updateBook(token, id, book, callback) {
                         if (error) throw error;
 
                         callback(result);
-
-                        // Clear other cache
-                        tags_cache = [];
-                        authors_cache = [];
-
-                        // Clear cache for id
-                        for (var i in book_cache) {
-                            if (book_cache[i].hash.indexOf(id) === 0) {
-                                delete book_cache[i];
-                            }
-                        }
                     });
                 } else {
                     
@@ -592,18 +514,6 @@ function deleteBook(token, id, callback) {
                     db.books.remove( { _id : db.ObjectId(id) }, function(error) {
                         if (error) throw error;
 
-                        // Clear other cache
-                        books_cache = [];
-                        tags_cache = [];
-                        authors_cache = [];
-
-                        // Clear cache for id
-                        for (var i in book_cache) {
-                            if (book_cache[i].hash.indexOf(id) === 0) {
-                                delete book_cache[i];
-                            }
-                        }
-
                         callback(result);
                     });
                 } else {
@@ -611,6 +521,7 @@ function deleteBook(token, id, callback) {
                     // Nope not valid id
                     callback(formatResult('NOTFND', 'Book not found'));
                 }
+
             });
 
         } else {
@@ -625,180 +536,143 @@ function deleteBook(token, id, callback) {
 function getBooks(options, callback) {
     resetResult();
 
-    // Get a hash for uniqueness in cache
-    var hash = doMd5(JSON.stringify(options));
-    var found = false;
+    // Book array
+    var books = [];
 
-    // Look for hash in cache
-    for (var i in books_cache) {
-        if (hash === books_cache[i].hash) {
-            callback(JSON.parse(books_cache[i].result));
-            found = true;
-            break;
-        }
+    // Sorting query
+    var sort = {};
+    sort[options.sortby] = options.sortorder === 'asc' ? 1 : -1;
+
+    // Searching, somewhat like the hard part of optimization
+    var query = {};
+
+    // Check if there's a search performed
+    if (!options.all) {
+
+        // Escape keyword
+        var keyword = options.keyword
+                             .replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g,
+                                     "\\$&");
+        
+        // Create query object
+        query[options.searchby] = { $regex : keyword, $options : 'i' };
     }
 
-    // Generate a cache if not found
-    if (!found) {
+    // Check for a tag search
+    if (options.tag.length > 0) {
+        
+        // Rebuild the query
+        query['tags'] = options.tag;
+    }
 
-        // Book array
-        var books = [];
+    // We need this same as tags
+    if (options.author.length > 0) {
+        query['authors'] = options.author;
+    }
 
-        // Sorting query
-        var sort = {};
-        sort[options.sortby] = options.sortorder === 'asc' ? 1 : -1;
+    db.books.count(query, function(error, count) {
+        if (error) throw error;
 
-        // Searching, somewhat like the hard part of optimization
-        var query = {};
+        // For unlimited
+        var nlimit = options.limit <= 0 ? options.limit : options.limit + 1;
 
-        // Check if there's a search performed
-        if (!options.all) {
+        // Get all books in the database
+        db.books.find(query).skip(options.offset).limit(nlimit).sort(sort, function(error, data) {
+            books = [];
 
-            // Escape keyword
-            var keyword = options.keyword
-                                 .replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g,
-                                         "\\$&");
+            // Get the length, if it's limit + 1, then we have a next page
+            var len = data.length;
             
-            // Create query object
-            query[options.searchby] = { $regex : keyword, $options : 'i' };
-        }
+            for (var i in data) {
+                delete data[i].reviews;
 
-        // Check for a tag search
-        if (options.tag.length > 0) {
-            
-            // Rebuild the query
-            query['tags'] = options.tag;
-        }
+                // Replace _id with book_id
+                data[i]['book_id'] = data[i]._id;
+                delete data[i]._id;
 
-        // We need this same as tags
-        if (options.author.length > 0) {
-            query['authors'] = options.author;
-        }
+                var filtered = {};
 
-        db.books.count(query, function(error, count) {
-            if (error) throw error;
-
-            // For unlimited
-            var nlimit = options.limit <= 0 ? options.limit : options.limit + 1;
-
-            // Get all books in the database
-            db.books.find(query).skip(options.offset).limit(nlimit).sort(sort, function(error, data) {
-                books = [];
-
-                // Get the length, if it's limit + 1, then we have a next page
-                var len = data.length;
+                // Then we need to filter the fields
+                for (var x in options.fields) {
+                    filtered[options.fields[x]] = data[i][options.fields[x]];
+                }
                 
-                for (var i in data) {
-                    delete data[i].reviews;
+                // Re-assign the filetered data
+                books.push(filtered);
+            }
 
-                    // Replace _id with book_id
-                    data[i]['book_id'] = data[i]._id;
-                    delete data[i]._id;
+            // Pop the extra
+            if (len > options.limit) {
+                books.pop();
 
-                    var filtered = {};
+                result['has_next'] = true;
+            } else {
+                result['has_next'] = false;
+            }
 
-                    // Then we need to filter the fields
-                    for (var x in options.fields) {
-                        filtered[options.fields[x]] = data[i][options.fields[x]];
-                    }
-                    
-                    // Re-assign the filetered data
-                    books.push(filtered);
-                }
+            // Append prev validator
+            if (options.offset <= 0) {
+                result['has_prev'] = false;
+            } else {
+                result['has_prev'] = true;
+            }
 
-                // Pop the extra
-                if (len > options.limit) {
-                    books.pop();
+            // Add books array
+            result['data'] = books;
 
-                    result['has_next'] = true;
-                } else {
-                    result['has_next'] = false;
-                }
+            result['count'] = count;
 
-                // Append prev validator
-                if (options.offset <= 0) {
-                    result['has_prev'] = false;
-                } else {
-                    result['has_prev'] = true;
-                }
-
-                // Add books array
-                result['data'] = books;
-
-                result['count'] = count;
-
-                books_cache.push({ hash: hash, result: JSON.stringify(result) });
-                callback(result);
-            });
+            callback(result);
         });
-    }
+    });
 }
 
 // Get specific book
 function getBook(id, fields, callback) {
     resetResult();
 
-    // We need to hash the fields + id
-    var hash = id + doMd5(id + JSON.stringify({ fields : fields }));
-    var found = false;
+    // Look for our book
+    db.books.find({ _id : db.ObjectId(id) }).limit(1, function(error, data) {
+        if (error) throw error;
 
-    // Then let's look for the hash in the cache
-    for (var i in book_cache) {
-        if (hash === book_cache[i].hash) {
-            callback(JSON.parse(book_cache[i].result));
-            found = true;
-            break;
-        }
-    }
+        var book = {};
 
-    // Generate if not found
-    if (!found) {
+        // Check if there's a record
+        if (data.length > 0) {
+            
+            // Filter fields
+            if (fields.length > 0) {
 
-        // Look for our book
-        db.books.find({ _id : db.ObjectId(id) }).limit(1, function(error, data) {
-            if (error) throw error;
-
-            var book = {};
-
-            // Check if there's a record
-            if (data.length > 0) {
-                
-                // Filter fields
-                if (fields.length > 0) {
-
-                    // Filter per field
-                    for (var i in fields) {
-                        if (fields[i] === 'book_id')
-                            fields[i] = '_id';
-                        book[fields[i]] = data[0][fields[i]];
-                    }
-                } else {
-                    
-                    // Return all
-                    book = data[0];
+                // Filter per field
+                for (var i in fields) {
+                    if (fields[i] === 'book_id')
+                        fields[i] = '_id';
+                    book[fields[i]] = data[0][fields[i]];
                 }
-
-                // Rename the id
-                book['book_id'] = book['_id'];
-                delete book._id;
-
-                // Remove reviews, if any
-                if (book.reviews !== undefined)
-                    delete book.reviews;
-                 
-                // Add book to the result
-                result['data'] = book;
-                
-                // Push result to cache
-                book_cache.push({ hash : hash, result : JSON.stringify(result) });
-                callback(result);
             } else {
                 
-                // ID doesn't exist
-                callback(formatResult('INVID', 'Book not found'));
+                // Return all
+                book = data[0];
             }
-        });
-    }
+
+            // Rename the id
+            book['book_id'] = book['_id'];
+            delete book._id;
+
+            // Remove reviews, if any
+            if (book.reviews !== undefined)
+                delete book.reviews;
+             
+            // Add book to the result
+            result['data'] = book;
+
+            callback(result);
+        } else {
+            
+            // ID doesn't exist
+            callback(formatResult('INVID', 'Book not found'));
+        }
+    });
 }
 
 // Creation of books
@@ -859,11 +733,7 @@ function insertBook(token, data, callback) {
                 result['data'] = {
                     book_id : data._id
                 };
-                
-                // Clear cache
-                books_cache = [];
-                tags_cache = [];
-                authors_cache = [];
+
                 callback(result);
             });
         } else {
